@@ -52,3 +52,14 @@ func (c *Client) GetRenderedManifests(name string) (string, error) {
 	}
 	return rel.Manifest, nil
 }
+
+// ListReleases returns all deployed Helm releases in the client's namespace.
+func (c *Client) ListReleases() ([]*release.Release, error) {
+	list := action.NewList(c.cfg)
+	list.Deployed = true
+	rels, err := list.Run()
+	if err != nil {
+		return nil, fmt.Errorf("listing releases: %w", err)
+	}
+	return rels, nil
+}
