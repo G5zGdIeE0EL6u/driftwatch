@@ -3,59 +3,64 @@ package drift
 import (
 	"fmt"
 
-	"github.com/your-org/driftwatch/internal/helm"
+	"github.com/yourorg/driftwatch/internal/helm"
+	helmrelease "helm.sh/helm/v3/pkg/release"
 )
 
-// ChartDriftResult captures differences between a release's deployed chart
-// version and an expected chart version.
+// ChartDriftResult represents a single value that differs between
+// the chart's default and the user-supplied override.
 type ChartDriftResult struct {
-	ReleaseName     string
-	DeployedVersion string
-	ExpectedVersion string
-	VersionDrifted  bool
-	DefaultsChanged []DiffEntry
+	Key          string
+	ChartDefault interface{}
+	UserValue    interface{}
+	Severity     string
 }
 
-// DiffEntry represents a single key that differs between two value maps.
-type DiffEntry struct {
-	Key      string
-	Deployed interface{}
-	Expected interface{}
-}
-
-// DetectChartDrift compares the deployed chart info against an expected ChartInfo
-// and returns a ChartDriftResult describing any version or default-value drift.
-func DetectChartDrift(releaseName string, deployed, expected *helm.ChartInfo) (*ChartDriftResult, error) {
-	if deployed == nil {
-		return nil, fmt.Errorf("deployed chart info is nil for release %q", releaseName)
-	}
-	if expected == nil {
-		return nil, fmt.Errorf("expected chart info is nil for release %q", releaseName)
+// DetectChartDrift compares a release's chart defaults against the
+// user-supplied values and returns any overridden keys.
+func DetectChartDrift(rel *helmrelease.Release, info helm.ChartInfo) []ChartDriftResult {
+	if rel == nil || rel.Chart == nil {
+		return nil
 	}
 
-	result := &ChartDriftResult{
-		ReleaseName:     releaseName,
-		DeployedVersion: deployed.Version,
-		ExpectedVersion: expected.Version,
-		VersionDrifted:  deployed.Version != expected.Version,
-	}
+	chartDefaults := rel.Chart.Values
+	userValues := rel.Config
 
-	result.DefaultsChanged = diffChartDefaults(deployed.DefaultValues, expected.DefaultValues)
-	return result, nil
+	var results []ChartDriftResult
+	diffChartDefaults("", chartDefaults, userValues, &results)
+	return results
 }
 
-// HasDrift returns true if either the version or any default values have drifted.
-func (r *ChartDriftResult) HasDrift() bool {
-	return r.VersionDrifted || len(r.DefaultsChanged) > 0
-}
+// diffChartDefaults recursively walks chart defaults and compares
+// them against user-supplied values, recording any differences.
+func diffChartDefaults(prefix string, defaults, user map[string]interface{}, out *[]ChartDriftResult) {
+	for k, defaultVal := range defaults {
+		fullKey := k
+		if prefix != "" {
+			fullKey = fmt.Sprintf("%s.%s", prefix, k)
+		}
 
-func diffChartDefaults(deployed, expected map[string]interface{}) []DiffEntry {
-	var diffs []DiffEntry
-	for k, expVal := range expected {
-		depVal, exists := deployed[k]
-		if !exists || fmt.Sprintf("%v", depVal) != fmt.Sprintf("%v", expVal) {
-			diffs = append(diffs, DiffEntry{Key: k, Deployed: depVal, Expected: expVal})
+		userVal, exists := user[k]
+		if !exists {
+			// Key not overridden — no drift from chart perspective.
+			continue
+		}
+
+		defaultMap, defaultIsMap := defaultVal.(map[string]interface{})
+		userMap, userIsMap := userVal.(map[string]interface{})
+
+		if defaultIsMap && userIsMap {
+			diffChartDefaults(fullKey, defaultMap, userMap, out)
+			continue
+		}
+
+		if fmt.Sprintf("%v", defaultVal) != fmt.Sprintf("%v", userVal) {
+			*out = append(*out, ChartDriftResult{
+				Key:          fullKey,
+				ChartDefault: defaultVal,
+				UserValue:    userVal,
+				Severity:     classifySeverity(fullKey),
+			})
 		}
 	}
-	return diffs
 }
