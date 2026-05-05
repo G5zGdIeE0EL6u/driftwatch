@@ -1,5 +1,7 @@
 package drift
 
+import "strings"
+
 // Severity indicates how critical a drift item is.
 type Severity string
 
@@ -41,4 +43,29 @@ func classifySeverity(key string) Severity {
 
 func hasPrefix(key, prefix string) bool {
 	return key == prefix || len(key) > len(prefix) && key[:len(prefix)+1] == prefix+"."
+}
+
+// FilterBySeverity returns only the DriftResults whose Severity matches
+// one of the provided severities. If no severities are given, all results
+// are returned unchanged.
+func FilterBySeverity(results []DriftResult, severities ...Severity) []DriftResult {
+	if len(severities) == 0 {
+		return results
+	}
+	allowed := make(map[Severity]struct{}, len(severities))
+	for _, s := range severities {
+		allowed[s] = struct{}{}
+	}
+	filtered := make([]DriftResult, 0, len(results))
+	for _, r := range results {
+		if _, ok := allowed[r.Severity]; ok {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+// String returns the string representation of a Severity.
+func (s Severity) String() string {
+	return strings.ToUpper(string(s))
 }
