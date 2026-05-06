@@ -49,6 +49,17 @@ func TestCachedClient_Invalidate(t *testing.T) {
 	}
 }
 
+func TestCachedClient_GetRelease_Miss(t *testing.T) {
+	rel := &release.Release{Name: "myapp", Namespace: "default"}
+	cc := buildCachedClient(t, rel)
+
+	// Requesting a release that does not exist should return an error.
+	_, err := cc.GetRelease("default", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for missing release, got nil")
+	}
+}
+
 func TestCachedClient_GetValues_Cached(t *testing.T) {
 	rel := &release.Release{
 		Name:      "myapp",
