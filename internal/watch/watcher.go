@@ -35,11 +35,18 @@ func New(cfg Config, client helm.ClientIface, detector *drift.Detector) *Watcher
 }
 
 // Run starts the watch loop, blocking until ctx is cancelled.
+// It performs an initial check immediately before waiting for the first tick,
+// so drift is reported without waiting a full interval on startup.
 func (w *Watcher) Run(ctx context.Context) error {
 	ticker := time.NewTicker(w.cfg.Interval)
 	defer ticker.Stop()
 
 	log.Printf("[driftwatch] starting watch for release %q every %s", w.cfg.Release, w.cfg.Interval)
+
+	// Run an immediate check so the user sees results right away.
+	if err := w.check(ctx); err != nil {
+		log.Printf("[driftwatch] check error: %v", err)
+	}
 
 	for {
 		select {
