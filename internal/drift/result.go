@@ -2,70 +2,46 @@ package drift
 
 import "strings"
 
-// Severity indicates how critical a drift item is.
-type Severity string
-
-const (
-	SeverityHigh   Severity = "high"
-	SeverityMedium Severity = "medium"
-	SeverityLow    Severity = "low"
-)
-
-// DriftResult represents a single value that has drifted between
-// the live release and the chart default.
+// DriftResult represents a single detected configuration drift.
 type DriftResult struct {
-	// Key is the dot-separated path of the value, e.g. "image.tag".
-	Key string `json:"key"`
-
-	// LiveValue is the value observed in the running release.
-	LiveValue interface{} `json:"liveValue"`
-
-	// ChartValue is the value defined in the chart defaults.
-	ChartValue interface{} `json:"chartValue"`
-
-	// Severity classifies the importance of the drift.
-	Severity Severity `json:"severity"`
+	Release   string            `json:"release"`
+	Namespace string            `json:"namespace"`
+	Key       string            `json:"key"`
+	LiveVal   interface{}       `json:"live_value"`
+	ChartVal  interface{}       `json:"chart_value"`
+	Severity  Severity          `json:"severity"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Note      string            `json:"note,omitempty"`
 }
 
-// classifySeverity returns a Severity based on the key path.
-// Keys under "image" or "replicas" are considered high severity;
-// keys under "resources" are medium; everything else is low.
+// classifySeverity assigns a severity level based on the key path.
 func classifySeverity(key string) Severity {
 	switch {
-	case hasPrefix(key, "image"), hasPrefix(key, "replicas"), hasPrefix(key, "replicaCount"):
+	case hasPrefix(key, "image.", "securityContext.", "serviceAccountName"):
 		return SeverityHigh
-	case hasPrefix(key, "resources"), hasPrefix(key, "limits"), hasPrefix(key, "requests"):
+	case hasPrefix(key, "resources.", "replicas", "env."):
 		return SeverityMedium
 	default:
 		return SeverityLow
 	}
 }
 
-func hasPrefix(key, prefix string) bool {
-	return key == prefix || len(key) > len(prefix) && key[:len(prefix)+1] == prefix+"."
-}
-
-// FilterBySeverity returns only the DriftResults whose Severity matches
-// one of the provided severities. If no severities are given, all results
-// are returned unchanged.
-func FilterBySeverity(results []DriftResult, severities ...Severity) []DriftResult {
-	if len(severities) == 0 {
-		return results
-	}
-	allowed := make(map[Severity]struct{}, len(severities))
-	for _, s := range severities {
-		allowed[s] = struct{}{}
-	}
-	filtered := make([]DriftResult, 0, len(results))
-	for _, r := range results {
-		if _, ok := allowed[r.Severity]; ok {
-			filtered = append(filtered, r)
+func hasPrefix(s string, prefixes ...string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) || s == p {
+			return true
 		}
 	}
-	return filtered
+	return false
 }
 
-// String returns the string representation of a Severity.
-func (s Severity) String() string {
-	return strings.ToUpper(string(s))
+// FilterBySeverity returns only results at or above the given severity.
+func FilterBySeverity(results []DriftResult, min Severity) []DriftResult {
+	var out []DriftResult
+	for _, r := range results {
+		if r.Severity >= min {
+			out = append(out, r)
+		}
+	}
+	return out
 }
